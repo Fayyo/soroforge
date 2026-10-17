@@ -76,6 +76,9 @@ type Deployment struct {
 	TxHash string `json:"tx_hash,omitempty"`
 	Ledger uint32 `json:"ledger,omitempty"`
 
+	ContractURL string `json:"contract_url,omitempty"`
+	TxURL       string `json:"tx_url,omitempty"`
+
 	// Notes is free-form operator context, e.g. a ticket or release tag.
 	Notes string `json:"notes,omitempty"`
 

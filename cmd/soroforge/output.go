@@ -51,6 +51,9 @@ func printDeployResult(r *deploy.DeployResult) error {
 	}
 
 	fmt.Fprintf(w, "  Contract ID   %s\n", r.ContractID)
+	if r.ContractURL != "" {
+		fmt.Fprintf(w, "  Explorer      %s\n", r.ContractURL)
+	}
 	fmt.Fprintf(w, "  WASM hash     %s\n", r.WasmHash)
 	fmt.Fprintf(w, "  Network       %s\n", r.Network)
 	fmt.Fprintf(w, "  Deployer      %s\n", r.Deployer)
@@ -59,9 +62,15 @@ func printDeployResult(r *deploy.DeployResult) error {
 		fmt.Fprintf(w, "  Upload        skipped (this bytecode is already on-chain)\n")
 	} else if r.UploadTxHash != "" {
 		fmt.Fprintf(w, "  Upload tx     %s\n", r.UploadTxHash)
+		if r.UploadTxURL != "" {
+			fmt.Fprintf(w, "  Upload URL    %s\n", r.UploadTxURL)
+		}
 	}
 	if r.CreateTxHash != "" {
 		fmt.Fprintf(w, "  Create tx     %s\n", r.CreateTxHash)
+		if r.CreateTxURL != "" {
+			fmt.Fprintf(w, "  Create URL    %s\n", r.CreateTxURL)
+		}
 	}
 	if r.Ledger != 0 {
 		fmt.Fprintf(w, "  Ledger        %d\n", r.Ledger)
@@ -93,6 +102,9 @@ func printUpgradeResult(r *deploy.UpgradeResult) error {
 		fmt.Fprintf(w, "%s on %s already runs this WASM hash — nothing to do.\n\n",
 			r.Alias, r.Network)
 		fmt.Fprintf(w, "  Contract ID   %s\n", r.ContractID)
+		if r.ContractURL != "" {
+			fmt.Fprintf(w, "  Explorer      %s\n", r.ContractURL)
+		}
 		fmt.Fprintf(w, "  WASM hash     %s\n", r.WasmHash)
 		return nil
 	}
@@ -104,6 +116,9 @@ func printUpgradeResult(r *deploy.UpgradeResult) error {
 	}
 
 	fmt.Fprintf(w, "  Contract ID   %s\n", r.ContractID)
+	if r.ContractURL != "" {
+		fmt.Fprintf(w, "  Explorer      %s\n", r.ContractURL)
+	}
 	fmt.Fprintf(w, "  From          %s\n", r.PreviousWasmHash)
 	fmt.Fprintf(w, "  To            %s\n", r.WasmHash)
 	fmt.Fprintf(w, "  Entrypoint    %s\n", r.UpgradeFunc)
@@ -113,9 +128,15 @@ func printUpgradeResult(r *deploy.UpgradeResult) error {
 		fmt.Fprintf(w, "  Upload        skipped (this bytecode is already on-chain)\n")
 	} else if r.UploadTxHash != "" {
 		fmt.Fprintf(w, "  Upload tx     %s\n", r.UploadTxHash)
+		if r.UploadTxURL != "" {
+			fmt.Fprintf(w, "  Upload URL    %s\n", r.UploadTxURL)
+		}
 	}
 	if r.UpgradeTxHash != "" {
 		fmt.Fprintf(w, "  Upgrade tx    %s\n", r.UpgradeTxHash)
+		if r.UpgradeTxURL != "" {
+			fmt.Fprintf(w, "  Upgrade URL   %s\n", r.UpgradeTxURL)
+		}
 	}
 	if r.Ledger != 0 {
 		fmt.Fprintf(w, "  Ledger        %d\n", r.Ledger)
@@ -179,9 +200,34 @@ func printHistory(alias, network string, deployments []store.Deployment) error {
 
 	fmt.Fprintf(out(), "History for %s on %s (newest first):\n\n", alias, network)
 
-	tw := tabwriter.NewWriter(out(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "WHEN\tACTION\tWASM HASH\tDEPLOYER\tLEDGER\tTX\tNOTES")
+	hasExplorerLinks := false
 	for _, d := range deployments {
+		if d.ContractURL != "" || d.TxURL != "" {
+			hasExplorerLinks = true
+			break
+		}
+	}
+	tw := tabwriter.NewWriter(out(), 0, 0, 2, ' ', 0)
+	if hasExplorerLinks {
+		fmt.Fprintln(tw, "WHEN\tACTION\tWASM HASH\tDEPLOYER\tLEDGER\tTX\tCONTRACT URL\tTX URL\tNOTES")
+	} else {
+		fmt.Fprintln(tw, "WHEN\tACTION\tWASM HASH\tDEPLOYER\tLEDGER\tTX\tNOTES")
+	}
+	for _, d := range deployments {
+		if hasExplorerLinks {
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+				formatTime(d.CreatedAt),
+				d.Action,
+				shortHash(d.WasmHash),
+				shortHash(d.DeployerPubkey),
+				formatLedger(d.Ledger),
+				shortHash(d.TxHash),
+				d.ContractURL,
+				d.TxURL,
+				truncate(d.Notes, 40),
+			)
+			continue
+		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			formatTime(d.CreatedAt),
 			d.Action,
