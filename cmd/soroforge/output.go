@@ -72,8 +72,14 @@ func printDeployResult(r *deploy.DeployResult) error {
 			fmt.Fprintf(w, "  Create URL    %s\n", r.CreateTxURL)
 		}
 	}
+	if r.InitTxHash != "" {
+		fmt.Fprintf(w, "  Init tx       %s\n", r.InitTxHash)
+	}
 	if r.Ledger != 0 {
 		fmt.Fprintf(w, "  Ledger        %d\n", r.Ledger)
+	}
+	if r.Deployment != nil && r.Deployment.CIRunURL != "" {
+		fmt.Fprintf(w, "  CI run        %s\n", r.Deployment.CIRunURL)
 	}
 	printCatalog(w, r.Catalog)
 
@@ -84,6 +90,9 @@ func printDeployResult(r *deploy.DeployResult) error {
 		}
 		if r.CreateEnvelopeXDR != "" {
 			fmt.Fprintf(w, "\n  create:\n  %s\n", r.CreateEnvelopeXDR)
+		}
+		if r.InitEnvelopeXDR != "" {
+			fmt.Fprintf(w, "\n  init:\n  %s\n", r.InitEnvelopeXDR)
 		}
 		fmt.Fprintf(w, "\nRe-run without --dry-run to submit.\n")
 	}
@@ -141,10 +150,95 @@ func printUpgradeResult(r *deploy.UpgradeResult) error {
 	if r.Ledger != 0 {
 		fmt.Fprintf(w, "  Ledger        %d\n", r.Ledger)
 	}
+	if r.Deployment != nil && r.Deployment.CIRunURL != "" {
+		fmt.Fprintf(w, "  CI run        %s\n", r.Deployment.CIRunURL)
+	}
 	printCatalog(w, r.Catalog)
 
 	if r.DryRun && r.UpgradeEnvelopeXDR != "" {
 		fmt.Fprintf(w, "\nAssembled upgrade envelope (unsigned):\n\n  %s\n", r.UpgradeEnvelopeXDR)
+		fmt.Fprintf(w, "\nRe-run without --dry-run to submit.\n")
+	}
+
+	return nil
+}
+
+func printUploadResult(r *deploy.UploadResult) error {
+	if flags.jsonOutput {
+		return printJSON(r)
+	}
+
+	w := out()
+
+	if r.UploadSkipped {
+		fmt.Fprintf(w, "%s's bytecode is already on-chain on %s — nothing to upload.\n\n",
+			r.Alias, r.Network)
+		fmt.Fprintf(w, "  WASM hash     %s\n", r.WasmHash)
+		fmt.Fprintf(w, "  Deployer      %s\n", r.Deployer)
+		return nil
+	}
+
+	if r.DryRun {
+		fmt.Fprintf(w, "Dry run — nothing was submitted and nothing was recorded.\n\n")
+	} else {
+		fmt.Fprintf(w, "Uploaded %s's bytecode to %s.\n\n", r.Alias, r.Network)
+	}
+
+	fmt.Fprintf(w, "  WASM hash     %s\n", r.WasmHash)
+	fmt.Fprintf(w, "  Network       %s\n", r.Network)
+	fmt.Fprintf(w, "  Deployer      %s\n", r.Deployer)
+	if r.MinResourceFee != 0 {
+		fmt.Fprintf(w, "  Resource fee  %d stroops\n", r.MinResourceFee)
+	}
+	if r.UploadTxHash != "" {
+		fmt.Fprintf(w, "  Upload tx     %s\n", r.UploadTxHash)
+	}
+	if r.Ledger != 0 {
+		fmt.Fprintf(w, "  Ledger        %d\n", r.Ledger)
+	}
+	if r.Deployment != nil && r.Deployment.CIRunURL != "" {
+		fmt.Fprintf(w, "  CI run        %s\n", r.Deployment.CIRunURL)
+	}
+
+	if r.DryRun && r.UploadEnvelopeXDR != "" {
+		fmt.Fprintf(w, "\nAssembled upload envelope (unsigned):\n\n  %s\n", r.UploadEnvelopeXDR)
+		fmt.Fprintf(w, "\nRe-run without --dry-run to submit.\n")
+	}
+
+	return nil
+}
+
+func printInvokeResult(r *deploy.InvokeResult) error {
+	if flags.jsonOutput {
+		return printJSON(r)
+	}
+
+	w := out()
+
+	if r.DryRun {
+		fmt.Fprintf(w, "Dry run — nothing was submitted and nothing was recorded.\n\n")
+	} else {
+		fmt.Fprintf(w, "Invoked %s on %s (%s).\n\n", r.Function, r.Alias, r.Network)
+	}
+
+	fmt.Fprintf(w, "  Contract ID   %s\n", r.ContractID)
+	fmt.Fprintf(w, "  Function      %s\n", r.Function)
+	if len(r.Args) > 0 {
+		fmt.Fprintf(w, "  Arguments     %s\n", strings.Join(r.Args, " "))
+	}
+	fmt.Fprintf(w, "  Deployer      %s\n", r.Deployer)
+	if r.TxHash != "" {
+		fmt.Fprintf(w, "  Tx hash       %s\n", r.TxHash)
+	}
+	if r.Ledger != 0 {
+		fmt.Fprintf(w, "  Ledger        %d\n", r.Ledger)
+	}
+	if r.Deployment != nil && r.Deployment.CIRunURL != "" {
+		fmt.Fprintf(w, "  CI run        %s\n", r.Deployment.CIRunURL)
+	}
+
+	if r.DryRun && r.EnvelopeXDR != "" {
+		fmt.Fprintf(w, "\nAssembled invocation envelope (unsigned):\n\n  %s\n", r.EnvelopeXDR)
 		fmt.Fprintf(w, "\nRe-run without --dry-run to submit.\n")
 	}
 
@@ -208,35 +302,59 @@ func printHistory(alias, network string, deployments []store.Deployment) error {
 		}
 	}
 	tw := tabwriter.NewWriter(out(), 0, 0, 2, ' ', 0)
+	header := "WHEN\tACTION\tWASM HASH\tDEPLOYER\tLEDGER\tFEE (STROOPS)\tFEE (XLM)\tCOMMIT\tTX\tCI RUN"
 	if hasExplorerLinks {
-		fmt.Fprintln(tw, "WHEN\tACTION\tWASM HASH\tDEPLOYER\tLEDGER\tTX\tCONTRACT URL\tTX URL\tNOTES")
-	} else {
-		fmt.Fprintln(tw, "WHEN\tACTION\tWASM HASH\tDEPLOYER\tLEDGER\tTX\tNOTES")
+		header += "\tCONTRACT URL\tTX URL"
 	}
+	fmt.Fprintln(tw, header+"\tNOTES")
 	for _, d := range deployments {
-		if hasExplorerLinks {
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-				formatTime(d.CreatedAt),
-				d.Action,
-				shortHash(d.WasmHash),
-				shortHash(d.DeployerPubkey),
-				formatLedger(d.Ledger),
-				shortHash(d.TxHash),
-				d.ContractURL,
-				d.TxURL,
-				truncate(d.Notes, 40),
-			)
-			continue
+		feeStroops, feeXLM := "-", "-"
+		if d.FeeCharged != nil {
+			feeStroops = fmt.Sprintf("%d", *d.FeeCharged)
+			feeXLM = fmt.Sprintf("%d.%07d", *d.FeeCharged/10_000_000, *d.FeeCharged%10_000_000)
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		commit := "-"
+		if d.GitCommit != "" {
+			commit = shortHash(d.GitCommit)
+			if d.Dirty {
+				commit += "*"
+			}
+		}
+		ciRun := "-"
+		if d.CIRunURL != "" {
+			ciRun = d.CIRunURL
+		}
+		notes := d.Notes
+		if d.Action == store.ActionInvoke && d.FnName != "" {
+			inv := d.FnName
+			if d.FnArgs != "" {
+				inv += "(" + d.FnArgs + ")"
+			} else {
+				inv += "()"
+			}
+			if notes != "" {
+				notes = inv + " - " + notes
+			} else {
+				notes = inv
+			}
+		}
+		cols := []string{
 			formatTime(d.CreatedAt),
-			d.Action,
+			string(d.Action),
 			shortHash(d.WasmHash),
 			shortHash(d.DeployerPubkey),
 			formatLedger(d.Ledger),
+			feeStroops,
+			feeXLM,
+			commit,
 			shortHash(d.TxHash),
-			truncate(d.Notes, 40),
-		)
+			ciRun,
+		}
+		if hasExplorerLinks {
+			cols = append(cols, d.ContractURL, d.TxURL)
+		}
+		cols = append(cols, truncate(notes, 40))
+		fmt.Fprintln(tw, strings.Join(cols, "\t"))
 	}
 	return tw.Flush()
 }

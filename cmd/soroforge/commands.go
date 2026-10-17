@@ -15,6 +15,7 @@ import (
 	"github.com/soroworks/soroforge/internal/api"
 	"github.com/soroworks/soroforge/internal/config"
 	"github.com/soroworks/soroforge/internal/deploy"
+	"github.com/soroworks/soroforge/internal/readiness"
 	"github.com/soroworks/soroforge/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -24,8 +25,9 @@ var version = "dev"
 
 func newDeployCmd() *cobra.Command {
 	var (
-		dryRun bool
-		notes  string
+		dryRun    bool
+		notes     string
+		gitCommit string
 	)
 
 	cmd := &cobra.Command{
@@ -54,10 +56,11 @@ assembled envelopes, and writes nothing to the database.`,
 			defer a.Close()
 
 			result, err := a.service.Deploy(cmd.Context(), deploy.DeployRequest{
-				Alias:   args[0],
-				Network: flags.network,
-				Notes:   notes,
-				DryRun:  dryRun,
+				Alias:     args[0],
+				Network:   flags.network,
+				Notes:     notes,
+				DryRun:    dryRun,
+				GitCommit: gitCommit,
 			})
 			if err != nil {
 				return err
@@ -70,14 +73,17 @@ assembled envelopes, and writes nothing to the database.`,
 		"assemble and simulate without submitting or recording anything")
 	cmd.Flags().StringVar(&notes, "notes", "",
 		"free-form note recorded with this deployment (e.g. a ticket or release tag)")
+	cmd.Flags().StringVar(&gitCommit, "git-commit", "", "override the detected source commit")
 
 	return cmd
 }
 
 func newUpgradeCmd() *cobra.Command {
 	var (
-		dryRun bool
-		notes  string
+		dryRun    bool
+		notes     string
+		gitCommit string
+		wasmHash  string
 	)
 
 	cmd := &cobra.Command{
@@ -102,10 +108,12 @@ upgrade applied outside SoroForge is still reported accurately.`,
 			defer a.Close()
 
 			result, err := a.service.Upgrade(cmd.Context(), deploy.UpgradeRequest{
-				Alias:   args[0],
-				Network: flags.network,
-				Notes:   notes,
-				DryRun:  dryRun,
+				Alias:     args[0],
+				Network:   flags.network,
+				Notes:     notes,
+				DryRun:    dryRun,
+				GitCommit: gitCommit,
+				WasmHash:  wasmHash,
 			})
 			if err != nil {
 				return err
@@ -118,6 +126,125 @@ upgrade applied outside SoroForge is still reported accurately.`,
 		"assemble and simulate without submitting or recording anything")
 	cmd.Flags().StringVar(&notes, "notes", "",
 		"free-form note recorded with this upgrade")
+	cmd.Flags().StringVar(&gitCommit, "git-commit", "", "override the detected source commit")
+	cmd.Flags().StringVar(&wasmHash, "wasm-hash", "", "upgrade to an existing on-chain WASM hash instead of local file")
+
+	return cmd
+}
+
+func newUploadCmd() *cobra.Command {
+	var (
+		dryRun bool
+		notes  string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "upload <alias>",
+		Short: "Install a contract's WASM on-chain without deploying or upgrading",
+		Long: `Upload a contract's bytecode so it is addressable by its hash.
+
+Nothing is deployed or upgraded: no contract instance is created and no
+existing contract changes. This is the first half of a governance-driven
+upgrade — upload the new bytecode, put its hash in a proposal, and let a
+separate party call the contract's upgrade function later. The hash is printed
+so it can go straight into that proposal.
+
+If the exact bytecode is already on-chain the upload is skipped, because
+uploading is content-addressed and a second copy would be a no-op that still
+costs a transaction.
+
+Use --dry-run to assemble and simulate without submitting or recording
+anything.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// A dry run writes nothing, so it does not need Postgres.
+			a, err := newApp(cmd.Context(), appOptions{
+				requireSigner: true,
+				storeOptional: dryRun,
+			})
+			if err != nil {
+				return err
+			}
+			defer a.Close()
+
+			result, err := a.service.Upload(cmd.Context(), deploy.UploadRequest{
+				Alias:   args[0],
+				Network: flags.network,
+				Notes:   notes,
+				DryRun:  dryRun,
+			})
+			if err != nil {
+				return err
+			}
+			return printUploadResult(result)
+		},
+	}
+
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false,
+		"assemble and simulate without submitting or recording anything")
+	cmd.Flags().StringVar(&notes, "notes", "",
+		"free-form note recorded with this upload (e.g. a ticket or release tag)")
+
+	return cmd
+}
+
+func newInvokeCmd() *cobra.Command {
+	var (
+		dryRun    bool
+		notes     string
+		gitCommit string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "invoke <alias> <fn> [args...]",
+		Short: "Invoke a function on a tracked contract",
+		Long: `Call a function on a tracked contract using the deployer key.
+
+The call is simulated, signed, submitted, and recorded in the deployment history
+with the function name and arguments.
+
+Arguments use the typed syntax:
+  soroforge invoke counter increment
+  soroforge invoke counter add u32:5
+  soroforge invoke token transfer address:GB... u64:1000
+
+Use --dry-run to simulate without submitting or recording anything.`,
+		Args: cobra.MinimumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a, err := newApp(cmd.Context(), appOptions{
+				requireSigner: true,
+				storeOptional: dryRun,
+			})
+			if err != nil {
+				return err
+			}
+			defer a.Close()
+
+			alias := args[0]
+			fn := args[1]
+			callArgs := args[2:]
+
+			result, err := a.service.Invoke(cmd.Context(), deploy.InvokeRequest{
+				Alias:     alias,
+				Network:   flags.network,
+				Function:  fn,
+				Args:      callArgs,
+				Notes:     notes,
+				DryRun:    dryRun,
+				GitCommit: gitCommit,
+			})
+			if err != nil {
+				return err
+			}
+			return printInvokeResult(result)
+		},
+	}
+
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false,
+		"assemble and simulate without submitting or recording anything")
+	cmd.Flags().StringVar(&notes, "notes", "",
+		"free-form note recorded with this invocation")
+	cmd.Flags().StringVar(&gitCommit, "git-commit", "", "override the detected source commit")
 
 	return cmd
 }
@@ -258,18 +385,23 @@ func newServeCmd() *cobra.Command {
 		Short: "Run the HTTP API for CI pipelines",
 		Long: `Serve the same operations as the CLI over HTTP.
 
-Every endpoint requires a bearer token from SOROFORGE_API_TOKEN; the server
-refuses to start without one, because it can deploy contracts using the
-configured signing key. It binds 127.0.0.1 by default — override with --addr
-only when you have put authentication and TLS in front of it.
+Every /v1 endpoint requires a bearer token; the server refuses to start
+without one, because it can deploy contracts using the configured signing
+key. SOROFORGE_API_TOKEN is a read-write token. SOROFORGE_API_TOKENS adds
+scoped tokens as name:scope:token entries, where scope is read or write —
+use read for dashboards and monitoring, which can then only call GET routes.
+It binds 127.0.0.1 by default — override with --addr only when you have put
+authentication and TLS in front of it.
 
 Endpoints:
-  GET  /health
+  GET  /health   liveness, no auth
+  GET  /ready    readiness (database and each network's RPC), no auth
   POST /v1/deploy
   POST /v1/upgrade
   GET  /v1/contracts?network=<name>
   GET  /v1/contracts/{network}/{alias}/history
-  GET  /v1/contracts/{network}/{alias}/status`,
+  GET  /v1/contracts/{network}/{alias}/status
+  GET  /v1/contracts/{network}/status`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			a, err := newApp(cmd.Context(), appOptions{})
@@ -278,15 +410,31 @@ Endpoints:
 			}
 			defer a.Close()
 
+			tokens, err := api.ParseTokens(a.cfg.Env.APIToken, a.cfg.Env.APITokens)
+			if err != nil {
+				return err
+			}
+
+			readinessChecker, err := readiness.New(readiness.Options{
+				Store:   a.store,
+				Config:  a.cfg,
+				Clients: deploy.DefaultClientFactory,
+				Log:     slog.Default(),
+			})
+			if err != nil {
+				return err
+			}
+
 			listenAddr := addr
 			if listenAddr == "" {
 				listenAddr = a.cfg.Env.ListenAddr()
 			}
 
 			handler, err := api.NewRouter(api.Options{
-				Service: a.service,
-				Token:   a.cfg.Env.APIToken,
-				Log:     slog.Default(),
+				Service:   a.service,
+				Tokens:    tokens,
+				Readiness: readinessChecker,
+				Log:       slog.Default(),
 			})
 			if err != nil {
 				return err
