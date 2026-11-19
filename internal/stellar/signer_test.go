@@ -117,12 +117,13 @@ func TestKeypairSignerFormattingNeverShowsSeed(t *testing.T) {
 }
 
 func TestNewMockSignerFromSeed(t *testing.T) {
-	validSeed := "GBBDZQ4xuwy7tTazq1w1LkTQ3SxnvHVtnE2wmhkL3xp6kE6YcLTKsn"
+	full := throwawayKey(t)
+	validSeed := full.Seed()
 
 	signer, err := NewMockSignerFromSeed(validSeed)
 	require.NoError(t, err)
 	assert.NotNil(t, signer)
-	assert.Equal(t, validSeed, signer.Address())
+	assert.Equal(t, full.Address(), signer.Address())
 
 	// Error path: invalid seed
 	_, err = NewMockSignerFromSeed("invalid-seed")

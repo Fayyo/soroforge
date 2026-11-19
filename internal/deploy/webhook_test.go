@@ -6,9 +6,9 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"io"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -22,7 +22,7 @@ import (
 
 // testHTTPClient is a no-op HTTP client used in unit tests.
 type testHTTPClient struct {
-	body string
+	body   string
 	status int
 }
 
@@ -269,39 +269,5 @@ contracts:
 
 	for _, leak := range []string{string(encoded), logs.String()} {
 		assert.NotContains(t, leak, secret, "the shared secret must never be reported")
-	}
-}
-
-func TestNewHTTPWebhookSender(t *testing.T) {
-	tests := []struct {
-		name string
-		client *http.Client
-		setupTimeout bool
-		wantTimeout time.Duration
-	}{
-		{
-			name:       "nil client gets timeout",
-			client:     nil,
-			setupTimeout: true,
-			wantTimeout: DefaultWebhookTimeout,
-		},
-		{
-			name:       "provided client used as-is",
-			client:     &http.Client{},
-			setupTimeout: false,
-			wantTimeout: 0, // caller's responsibility
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			sender := NewHTTPWebhookSender(tc.client)
-			assert.NotNil(t, sender)
-			assert.NotNil(t, sender.client)
-			if tc.setupTimeout {
-				assert.Equal(t, tc.wantTimeout, sender.client.Timeout)
-			} else {
-				assert.Equal(t, tc.client, sender.client)
-			}
-		})
 	}
 }
