@@ -84,6 +84,10 @@ func TestPassphrasesMatch(t *testing.T) {
 	assert.False(t, PassphrasesMatch(testnet, "Test SDF Network ; September 2016"))
 	assert.False(t, PassphrasesMatch(testnet, ""), "an empty report is not a match")
 	assert.False(t, PassphrasesMatch("", testnet), "an unconfigured passphrase cannot match")
+	// Edge cases:
+	assert.False(t, PassphrasesMatch("   ", "   "), "two whitespace-only strings must not match after TrimSpace")
+	assert.True(t, PassphrasesMatch("Test SDF Network ; September 2015", "Test SDF Network ; September 2015   \t\n"), "trailing whitespace+newlines trimmed")
+	assert.False(t, PassphrasesMatch("Test SDF Network ; September 2015", "Test SDF Network ; September 2015 extra"), "internal extra text must not match")
 }
 
 // stubClient is a stellar.Client whose endpoint behaviour tests choose. It

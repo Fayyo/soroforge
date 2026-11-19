@@ -115,3 +115,22 @@ func TestKeypairSignerFormattingNeverShowsSeed(t *testing.T) {
 		assert.Contains(t, out, full.Address(), "%s shows the address", verb)
 	}
 }
+
+func TestNewMockSignerFromSeed(t *testing.T) {
+	validSeed := "GBBDZQ4xuwy7tTazq1w1LkTQ3SxnvHVtnE2wmhkL3xp6kE6YcLTKsn"
+
+	signer, err := NewMockSignerFromSeed(validSeed)
+	require.NoError(t, err)
+	assert.NotNil(t, signer)
+	assert.Equal(t, validSeed, signer.Address())
+
+	// Error path: invalid seed
+	_, err = NewMockSignerFromSeed("invalid-seed")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid Stellar secret seed")
+
+	// Error path: empty seed
+	_, err = NewMockSignerFromSeed("")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid Stellar secret seed")
+}
